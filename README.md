@@ -92,10 +92,6 @@ Output goes to `bin/Release/net9.0-windows/win-x64/`.
 5. Right-click the 3D view to filter, select, drill in, or extract
 6. Use Export to generate scripts for your RE tool of choice
 
-## Architecture
-
-See [CLAUDE.md](CLAUDE.md) for detailed architecture documentation, field inventories, implementation notes, and known gotchas.
-
 ## License
 
 MIT
