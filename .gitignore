@@ -1,0 +1,27 @@
+# .NET build output
+bin/
+obj/
+publish/
+
+# IDE
+.vs/
+*.user
+*.suo
+*.csproj.user
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Reference materials (large, not source)
+reference materials/
+
+# Examples
+examples/
+
+# Upload script (not needed in repo)
+push-to-github.bat
+
+# Temp files from drill-in
+*.tmp
