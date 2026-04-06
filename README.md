@@ -4,7 +4,7 @@ A Windows desktop application for scanning binary files to find embedded files, 
 
 Built with .NET 9, C#, WPF. Zero external dependencies.
 
-!(screenshot.png)
+![Screenshot](screenshot.png)
 
 ## Features
 
