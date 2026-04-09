@@ -1,9 +1,0 @@
-// Resolve ambiguities between WPF and WinForms types caused by UseWindowsForms=true
-global using Application = System.Windows.Application;
-global using Brush = System.Windows.Media.Brush;
-global using Color = System.Windows.Media.Color;
-global using DataFormats = System.Windows.DataFormats;
-global using DragDropEffects = System.Windows.DragDropEffects;
-global using DragEventArgs = System.Windows.DragEventArgs;
-global using MessageBox = System.Windows.MessageBox;
-global using Rectangle = System.Windows.Shapes.Rectangle;
