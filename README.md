@@ -1,10 +1,10 @@
 # BinaryCarver
 
+There have been a ton of updates to this, just not for this readme or other documentation. More to follow.
+
 A Windows desktop application for scanning binary files to find embedded files, analyze entropy patterns, and export region maps for reverse engineering tools. Think **binwalk with a GUI** — plus 3D visualization, multi-base entropy analysis, and one-click export to IDA Pro, Ghidra, radare2, and Binary Ninja.
 
 Built with .NET 9, C#, WPF. Zero external dependencies.
-
-![Binary Carver Screenshot](screenshot.png)
 
 ## Features
 
@@ -93,6 +93,10 @@ Output goes to `bin/Release/net9.0-windows/win-x64/`.
 4. Click entropy tracks to inspect individual blocks
 5. Right-click the 3D view to filter, select, drill in, or extract
 6. Use Export to generate scripts for your RE tool of choice
+
+## Architecture
+
+See [CLAUDE.md](CLAUDE.md) for detailed architecture documentation, field inventories, implementation notes, and known gotchas.
 
 ## License
 

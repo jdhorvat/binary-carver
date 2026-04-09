@@ -1,0 +1,104 @@
+<Window x:Class="BinaryCarver.SignatureEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Custom Signature Editor"
+        Width="700" Height="500"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BackgroundBrush}"
+        ResizeMode="CanResizeWithGrip">
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <TextBlock Grid.Row="0" Text="CUSTOM SIGNATURES"
+                   Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+
+        <!-- Signature list -->
+        <DataGrid x:Name="GridSigs" Grid.Row="1"
+                  AutoGenerateColumns="False"
+                  SelectionChanged="GridSigs_SelectionChanged"
+                  Margin="0,0,0,12">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Type"        Binding="{Binding FileType}"    Width="80"/>
+                <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="160"/>
+                <DataGridTextColumn Header="Magic (hex)" Binding="{Binding MagicHex}"    Width="140"/>
+                <DataGridTextColumn Header="Text?"       Binding="{Binding IsTextBased}" Width="50"/>
+                <DataGridTextColumn Header="Text Prefix" Binding="{Binding TextPrefix}"  Width="100"/>
+                <DataGridTextColumn Header="Offset"      Binding="{Binding SearchOffset}" Width="55"/>
+                <DataGridTextColumn Header="Ext"         Binding="{Binding DefaultExt}"  Width="55"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Add/edit form -->
+        <Border Grid.Row="2" Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="12" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="File Type:" FontSize="12"
+                           VerticalAlignment="Center" Margin="0,0,8,6"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBox x:Name="TxtSigType" Grid.Row="0" Grid.Column="1"
+                         FontSize="12" Padding="4,3" Margin="0,0,12,6"/>
+
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="Description:" FontSize="12"
+                           VerticalAlignment="Center" Margin="0,0,8,6"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBox x:Name="TxtSigDesc" Grid.Row="0" Grid.Column="3"
+                         FontSize="12" Padding="4,3" Margin="0,0,0,6"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Magic (hex):" FontSize="12"
+                           VerticalAlignment="Center" Margin="0,0,8,6"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBox x:Name="TxtSigMagic" Grid.Row="1" Grid.Column="1"
+                         FontFamily="Consolas" FontSize="12" Padding="4,3" Margin="0,0,12,6"
+                         ToolTip="e.g. 89504E47 for PNG"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="2" Text="Search Offset:" FontSize="12"
+                           VerticalAlignment="Center" Margin="0,0,8,6"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBox x:Name="TxtSigOffset" Grid.Row="1" Grid.Column="3"
+                         FontSize="12" Padding="4,3" Margin="0,0,0,6" Text="0"/>
+
+                <CheckBox x:Name="ChkTextBased" Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+                          Content="Text-based signature" FontSize="12" Margin="0,0,12,0"
+                          VerticalAlignment="Center"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="2" Text="Extension:" FontSize="12"
+                           VerticalAlignment="Center" Margin="0,0,8,0"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                <TextBox x:Name="TxtSigExt" Grid.Row="2" Grid.Column="3"
+                         FontSize="12" Padding="4,3" Text=".bin"/>
+            </Grid>
+        </Border>
+
+        <!-- Action buttons -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Add" Click="BtnAdd_Click"
+                    Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
+            <Button Content="Remove Selected" Click="BtnRemove_Click"
+                    Style="{StaticResource SecondaryButton}" Margin="0,0,8,0"/>
+            <Button Content="Save &amp; Close" Click="BtnSave_Click"
+                    Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
+            <Button Content="Cancel" Click="BtnCancel_Click"
+                    Style="{StaticResource SecondaryButton}"/>
+        </StackPanel>
+    </Grid>
+</Window>
