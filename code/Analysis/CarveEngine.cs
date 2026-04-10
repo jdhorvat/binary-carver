@@ -1230,7 +1230,7 @@ public static class CarveEngine
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // RE TOOL EXPORTS
+    // ANALYSIS TOOL EXPORTS
     // ═══════════════════════════════════════════════════════════════════════
 
     /// <summary>Export as IDA-compatible MAP file (File → Load File → MAP File).</summary>
@@ -1588,7 +1588,7 @@ public static class CarveEngine
         File.WriteAllText(outputPath, sb.ToString());
     }
 
-    // ── Helpers for RE exports ──────────────────────────────────────────
+    // ── Helpers for analysis tool exports ─────────────────────────────
 
     private static string SanitizeSegName(string fileType, int index)
     {

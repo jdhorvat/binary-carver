@@ -23,6 +23,7 @@ public partial class MainWindow : Window
     private int _rangeStartBlock = -1;  // Shift-click range selection
     private int _rangeEndBlock = -1;
 
+
     // 3D visualization state
     private System.Windows.Point _lastMousePos3D;
     private bool _isDragging3D;
@@ -34,6 +35,10 @@ public partial class MainWindow : Window
     private int _3dLayers;
     private int _3dNumPages;
     private double _3dSpacing = 1.1;
+    private int _3dLayoutMode = 0;       // 0=Auto Cube, 1=Wrap Grid, 2=Flat Grid, 3=HCP Spheres, 4=Voxel
+    private int _3dWrapW = 16;           // wrap columns for Wrap Grid / Flat Grid / HCP
+    private int _3dWrapH = 16;           // wrap rows for Wrap Grid
+    private int _3dVoxelDim = 64;        // voxel cube edge length (D×D×D)
     // Grid is always centered at origin (0,0,0) — camera orbits around origin
     private HashSet<int> _selectedPageIndices = new();  // multi-select cubes in 3D
     private Color[] _pageColors = [];                   // cached per-page colors for color-matching
@@ -190,6 +195,7 @@ public partial class MainWindow : Window
                 e.Handled = true;
             }
         }
+
     }
 
     /// <summary>
@@ -271,8 +277,9 @@ public partial class MainWindow : Window
     {
         // Show/hide panels
         DropZone.Visibility     = Visibility.Collapsed;
-        ByteMapPanel.Visibility = Visibility.Visible;
-        ResultsPanel.Visibility = Visibility.Visible;
+        ByteMapPanel.Visibility    = Visibility.Visible;
+        EntropyBarsPanel.Visibility = Visibility.Visible;
+        ResultsPanel.Visibility    = Visibility.Visible;
         DetailPanel.Visibility  = Visibility.Collapsed;
         RangePanel.Visibility   = Visibility.Visible;
 
@@ -1809,7 +1816,7 @@ public partial class MainWindow : Window
         }
     }
 
-    // ── Export (JSON / CSV / RE tools) ───────────────────────────────────
+    // ── Export (JSON / CSV / analysis tools) ────────────────────────────
 
     private void BtnExport_Click(object sender, RoutedEventArgs e)
     {
@@ -2079,12 +2086,61 @@ public partial class MainWindow : Window
         if (_result == null) return;
         if (Panel3D.Visibility == Visibility.Visible)
         {
-            // Shape change needs full geometry rebuild, but preserve camera
             double savedTheta = _camTheta, savedPhi = _camPhi, savedDist = _camDist;
             Build3DView();
             _camTheta = savedTheta; _camPhi = savedPhi; _camDist = savedDist;
             UpdateCamera(0, 0, 0);
         }
+    }
+
+    private void Cbo3DLayout_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (Panel3DWrap == null) return; // guard against init-order firing
+        _3dLayoutMode = Cbo3DLayout?.SelectedIndex ?? 0;
+        Update3DLayoutControls();
+        if (_result == null) return;
+        if (Panel3D.Visibility == Visibility.Visible)
+            Build3DView();
+    }
+
+    private void Update3DLayoutControls()
+    {
+        if (Panel3DWrap == null) return;
+        // Show wrap controls for Wrap Grid (1), Flat Grid (2), HCP (3)
+        bool showWrap  = _3dLayoutMode >= 1 && _3dLayoutMode <= 3;
+        bool showVoxel = _3dLayoutMode == 4;
+        // HCP forces Spheres shape
+        bool showShape = _3dLayoutMode != 3 && _3dLayoutMode != 4;
+        Panel3DWrap.Visibility  = showWrap  ? Visibility.Visible : Visibility.Collapsed;
+        Panel3DVoxel.Visibility = showVoxel ? Visibility.Visible : Visibility.Collapsed;
+        Cbo3DShape.Visibility   = showShape ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void Slider3DWrapW_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (Txt3DWrapW == null || Panel3DWrap == null) return;
+        _3dWrapW = Math.Max(1, (int)e.NewValue);
+        Txt3DWrapW.Text = _3dWrapW.ToString();
+        if (_result != null && Panel3D.Visibility == Visibility.Visible)
+            Rebuild3DPreservingCamera();
+    }
+
+    private void Slider3DWrapH_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (Txt3DWrapH == null || Panel3DWrap == null) return;
+        _3dWrapH = Math.Max(1, (int)e.NewValue);
+        Txt3DWrapH.Text = _3dWrapH.ToString();
+        if (_result != null && Panel3D.Visibility == Visibility.Visible)
+            Rebuild3DPreservingCamera();
+    }
+
+    private void Slider3DVoxelDim_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (Txt3DVoxelDim == null || Panel3DVoxel == null) return;
+        _3dVoxelDim = Math.Max(8, (int)e.NewValue);
+        Txt3DVoxelDim.Text = _3dVoxelDim.ToString();
+        if (_result != null && Panel3D.Visibility == Visibility.Visible)
+            Rebuild3DPreservingCamera();
     }
 
     private void SliderSpacing_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -2106,7 +2162,6 @@ public partial class MainWindow : Window
             Col3D.Width = new GridLength(1, GridUnitType.Star);
             Col3D.MinWidth = 180;
             Panel3D.Visibility = Visibility.Visible;
-            Btn3DToggle.Content = "Hide 3D";
             if (_result != null) Build3DView();
         }
         else
@@ -2114,7 +2169,6 @@ public partial class MainWindow : Window
             Col3D.Width = new GridLength(0);
             Col3D.MinWidth = 0;
             Panel3D.Visibility = Visibility.Collapsed;
-            Btn3DToggle.Content = "Show 3D";
         }
     }
 
@@ -2321,40 +2375,81 @@ public partial class MainWindow : Window
     {
         if (_result == null || _result.FileSize <= 0) return;
 
+        // Voxel mode uses raw byte data — completely separate rendering path
+        if (_3dLayoutMode == 4)
+        {
+            Build3DVoxelView();
+            return;
+        }
+
         int numPages = (int)Math.Ceiling((double)_result.FileSize / _result.EntropyBlockSize);
-        // Cap at 4096 pages for performance
         if (numPages > 4096) numPages = 4096;
 
-        // Compute grid dimensions for a roughly cubic layout
-        int pagesPerRow = (int)Math.Ceiling(Math.Pow(numPages, 1.0 / 3.0));
-        int pagesPerCol = pagesPerRow;
-        int layers = (int)Math.Ceiling((double)numPages / (pagesPerRow * pagesPerCol));
+        // ── Compute grid dimensions based on layout mode ──────────────
+        int pagesPerRow, pagesPerCol, layers;
+        string layoutLabel;
 
-        // Cache grid layout for hit-testing and camera
+        switch (_3dLayoutMode)
+        {
+            case 1: // Wrap Grid — user-specified W×H, Z = leftover layers
+                pagesPerRow = Math.Max(1, _3dWrapW);
+                pagesPerCol = Math.Max(1, _3dWrapH);
+                layers = (int)Math.Ceiling((double)numPages / (pagesPerRow * pagesPerCol));
+                layoutLabel = $"Wrap {pagesPerRow}×{pagesPerCol}×{layers}";
+                break;
+
+            case 2: // Flat Grid — user W columns, single layer (Z=1)
+                pagesPerRow = Math.Max(1, _3dWrapW);
+                pagesPerCol = (int)Math.Ceiling((double)numPages / pagesPerRow);
+                layers = 1;
+                layoutLabel = $"Flat {pagesPerRow}×{pagesPerCol}";
+                break;
+
+            case 3: // HCP Spheres — hexagonal close-packed, uses wrap W×H
+                pagesPerRow = Math.Max(1, _3dWrapW);
+                pagesPerCol = Math.Max(1, _3dWrapH);
+                layers = (int)Math.Ceiling((double)numPages / (pagesPerRow * pagesPerCol));
+                layoutLabel = $"HCP {pagesPerRow}×{pagesPerCol}×{layers}";
+                break;
+
+            default: // Auto Cube — roughly cubic layout
+                pagesPerRow = (int)Math.Ceiling(Math.Pow(numPages, 1.0 / 3.0));
+                pagesPerCol = pagesPerRow;
+                layers = (int)Math.Ceiling((double)numPages / (pagesPerRow * pagesPerCol));
+                layoutLabel = $"{pagesPerRow}×{pagesPerCol}×{layers}";
+                break;
+        }
+
         _3dPagesPerRow = pagesPerRow;
         _3dPagesPerCol = pagesPerCol;
         _3dLayers = layers;
         _3dNumPages = numPages;
-        // _3dSpacing is set by the slider (default 1.1)
 
         double spacing = _3dSpacing;
+        bool isHCP = _3dLayoutMode == 3;
 
-        // Offsets to center the grid at origin (0,0,0)
+        // HCP geometry constants: rows offset by half, layers offset in X and Y
+        double hcpRowShiftX = isHCP ? spacing * 0.5 : 0;       // odd rows shift X by half
+        double hcpLayerShiftX = isHCP ? spacing * 0.5 / 2.0 : 0; // odd layers shift X by quarter
+        double hcpLayerShiftY = isHCP ? spacing * Math.Sqrt(3.0) / 6.0 : 0; // Y offset per layer
+        double hcpRowSpacingY = isHCP ? spacing * Math.Sqrt(3.0) / 2.0 : spacing; // Y between rows
+        double hcpLayerSpacingZ = isHCP ? spacing * Math.Sqrt(6.0) / 3.0 : spacing; // Z between layers
+        // For HCP, sphere radius = spacing/2 so they kiss tangentially
+        double hcpRadius = spacing / 2.0;
+
+        // Centering offsets
         double offX = (pagesPerRow - 1) * spacing / 2.0;
-        double offY = (pagesPerCol - 1) * spacing / 2.0;
-        double offZ = (layers - 1) * spacing / 2.0;
+        double offY = (pagesPerCol - 1) * (isHCP ? hcpRowSpacingY : spacing) / 2.0;
+        double offZ = (layers - 1) * (isHCP ? hcpLayerSpacingZ : spacing) / 2.0;
 
-        // Build a single mesh with all cube faces for performance
         var positions = new Point3DCollection();
         var indices = new Int32Collection();
         var colors = new List<Color>();
+        var shapeRanges = new List<(int VertStart, int VertCount, int IdxStart, int IdxCount)>();
+        var isRegionAssigned = new bool[numPages];
 
         int pageIdx = 0;
-        int shapeMode = Get3DShapeMode(); // 0=Cubes, 1=Bars, 2=Spheres
-
-        // Track per-shape vertex/index ranges for color batching
-        var shapeRanges = new List<(int VertStart, int VertCount, int IdxStart, int IdxCount)>();
-        var isRegionAssigned = new bool[numPages]; // track which pages go transparent
+        int shapeMode = isHCP ? 2 : Get3DShapeMode(); // HCP forces spheres
 
         for (int z = 0; z < layers && pageIdx < numPages; z++)
         {
@@ -2367,28 +2462,58 @@ public partial class MainWindow : Window
                     isRegionAssigned[pageIdx] = inRegion;
 
                     Color c = passesFilter ? GetPageColor(pageIdx) : Color.FromRgb(30, 30, 30);
-                    double px = x * spacing - offX;
-                    double py = y * spacing - offY;
-                    double pz = -(z * spacing - offZ);
+
+                    // Position computation depends on layout mode
+                    double px, py, pz;
+                    if (isHCP)
+                    {
+                        // Hexagonal close-packing: odd rows shift in X, odd layers shift in X+Y
+                        bool oddRow   = (y % 2) == 1;
+                        bool oddLayer = (z % 2) == 1;
+                        px = x * spacing
+                           + (oddRow ? hcpRowShiftX : 0)
+                           + (oddLayer ? hcpLayerShiftX : 0)
+                           - offX;
+                        py = y * hcpRowSpacingY
+                           + (oddLayer ? hcpLayerShiftY : 0)
+                           - offY;
+                        pz = -(z * hcpLayerSpacingZ - offZ);
+                    }
+                    else
+                    {
+                        px = x * spacing - offX;
+                        py = y * spacing - offY;
+                        pz = -(z * spacing - offZ);
+                    }
 
                     int vStart = positions.Count;
                     int iStart = indices.Count;
+                    double scale = passesFilter ? 1.0 : 0.25;
 
-                    double scale = passesFilter ? 1.0 : 0.25; // ghosted pages are tiny
                     switch (shapeMode)
                     {
-                        case 1: // Bars — height proportional to value
+                        case 1: // Bars
                         {
                             double val = passesFilter ? GetPageValue(pageIdx) : 0.02;
                             double barH = Math.Max(0.05, val) * spacing * 2.0;
                             AddBar(positions, indices, colors, px, py, pz, 0.85 * scale, barH, c);
                             break;
                         }
-                        case 2: // Spheres — radius proportional to value
+                        case 2: // Spheres (or HCP tangential spheres)
                         {
-                            double val = passesFilter ? GetPageValue(pageIdx) : 0.05;
-                            double radius = Math.Max(0.05, val * 0.48) * scale;
-                            AddSphere(positions, indices, colors, px, py, pz, radius, 8, c);
+                            double radius;
+                            if (isHCP)
+                            {
+                                // Kissing spheres: radius = half-spacing so they touch neighbors
+                                radius = hcpRadius * scale * 0.98; // tiny gap for visibility
+                            }
+                            else
+                            {
+                                double val = passesFilter ? GetPageValue(pageIdx) : 0.05;
+                                radius = Math.Max(0.05, val * 0.48) * scale;
+                            }
+                            int segs = isHCP ? 10 : 8; // slightly higher detail for HCP
+                            AddSphere(positions, indices, colors, px, py, pz, radius, segs, c);
                             break;
                         }
                         default: // Cubes
@@ -2402,11 +2527,9 @@ public partial class MainWindow : Window
             }
         }
 
-        // Cache per-page colors for right-click color matching
         _pageColors = colors.ToArray();
 
-        // Batch shapes by color for rendering performance
-        // Opaque batch (normal blocks) and transparent batch (region-assigned blocks) kept separate
+        // ── Color-batched rendering ───────────────────────────────────
         var group = new Model3DGroup();
         var opaqueBatches = new Dictionary<uint, (Point3DCollection Pos, Int32Collection Idx)>();
         var transpBatches = new Dictionary<uint, (Point3DCollection Pos, Int32Collection Idx)>();
@@ -2426,12 +2549,10 @@ public partial class MainWindow : Window
 
             for (int v = 0; v < vertCount; v++)
                 bPos.Add(positions[srcVertStart + v]);
-
             for (int t = 0; t < idxCount; t++)
                 bIdx.Add(indices[srcIdxStart + t] - srcVertStart + dstVertStart);
         }
 
-        // Add opaque batches (normal blocks)
         foreach (var kvp in opaqueBatches)
         {
             uint key = kvp.Key;
@@ -2439,13 +2560,11 @@ public partial class MainWindow : Window
             byte r = (byte)((key >> 16) & 0xFF);
             byte g = (byte)((key >> 8) & 0xFF);
             byte b = (byte)(key & 0xFF);
-
             var batchMesh = new MeshGeometry3D { Positions = bPos, TriangleIndices = bIdx };
             var mat = new DiffuseMaterial(new SolidColorBrush(Color.FromRgb(r, g, b)));
             group.Children.Add(new GeometryModel3D(batchMesh, mat) { BackMaterial = mat });
         }
 
-        // Add transparent batches (region-assigned blocks — mostly transparent so they fade out)
         foreach (var kvp in transpBatches)
         {
             uint key = kvp.Key;
@@ -2453,32 +2572,181 @@ public partial class MainWindow : Window
             byte r = (byte)((key >> 16) & 0xFF);
             byte g = (byte)((key >> 8) & 0xFF);
             byte b = (byte)(key & 0xFF);
-
             var batchMesh = new MeshGeometry3D { Positions = bPos, TriangleIndices = bIdx };
-            var mat = new DiffuseMaterial(new SolidColorBrush(Color.FromArgb(45, r, g, b))); // ~18% opacity
+            var mat = new DiffuseMaterial(new SolidColorBrush(Color.FromArgb(45, r, g, b)));
             group.Children.Add(new GeometryModel3D(batchMesh, mat) { BackMaterial = mat });
         }
 
         DataModel3D.Content = group;
-
-        // Update selection highlight on the separate overlay
         UpdateHighlight3D();
 
-        // Zoom extents: fit entire prism with margin
+        // Zoom extents
         double extX = pagesPerRow * spacing / 2.0;
-        double extY = pagesPerCol * spacing / 2.0;
-        double extZ = layers * spacing / 2.0;
+        double extY = pagesPerCol * (isHCP ? hcpRowSpacingY : spacing) / 2.0;
+        double extZ = layers * (isHCP ? hcpLayerSpacingZ : spacing) / 2.0;
         double boundRadius = Math.Sqrt(extX * extX + extY * extY + extZ * extZ);
         double fovRad = 60.0 * Math.PI / 180.0;
-        _camDist = boundRadius / Math.Sin(fovRad / 2.0) * 1.15; // 15% margin — tight default zoom
+        _camDist = boundRadius / Math.Sin(fovRad / 2.0) * 1.15;
         UpdateCamera(0, 0, 0);
 
         string filterInfo = _filterSet != null ? $"\nFILTER: {_filterLabel} ({_filterSet.Count} match)" : "";
         int regionAssignedCount = 0;
         for (int i = 0; i < numPages; i++)
             if (isRegionAssigned[i]) regionAssignedCount++;
-        string regionInfo = regionAssignedCount > 0 ? $"\n{regionAssignedCount} block{(regionAssignedCount == 1 ? "" : "s")} assigned to regions" : "";
-        Txt3DInfo.Text = $"{numPages} pages ({_result.EntropyBlockSize}B)  {pagesPerRow}×{pagesPerCol}×{layers}\nDrag to rotate, scroll to zoom{regionInfo}{filterInfo}";
+        string regionInfo = regionAssignedCount > 0 ? $"\n{regionAssignedCount} assigned to regions" : "";
+        string shapeLabel = isHCP ? "HCP tangential" : (shapeMode == 0 ? "cubes" : shapeMode == 1 ? "bars" : "spheres");
+        Txt3DInfo.Text = $"{numPages} pages ({_result.EntropyBlockSize}B)  {layoutLabel}  [{shapeLabel}]\nDrag=rotate  scroll=zoom  mid-click=fit{regionInfo}{filterInfo}";
+    }
+
+    // ── Byte-level voxel volume rendering ─────────────────────────────
+
+    /// <summary>
+    /// Renders raw file bytes as a 3D voxel cube using textured slice planes.
+    /// Folds byte stream into a D×D×D volume. Each slice is a textured quad
+    /// mapped with a WriteableBitmap showing byte values as colors.
+    /// WPF Viewport3D handles compositing the semi-transparent slices.
+    /// </summary>
+    private void Build3DVoxelView()
+    {
+        if (_fileData == null || _fileData.Length == 0) return;
+
+        int dim = Math.Max(8, Math.Min(_3dVoxelDim, 256));
+        int sliceArea = dim * dim;
+        int totalVoxels = dim * dim * dim;
+        int usableBytes = Math.Min(_fileData.Length, totalVoxels);
+
+        // Cache layout for camera
+        _3dPagesPerRow = dim;
+        _3dPagesPerCol = dim;
+        _3dLayers = dim;
+        _3dNumPages = 0; // no block-level hit-testing in voxel mode
+
+        var group = new Model3DGroup();
+        double spacing = _3dSpacing;
+        double cubeSize = dim * spacing;
+        double half = cubeSize / 2.0;
+
+        // Build a colormap: byte value → color (blue→cyan→green→yellow→red→white)
+        var colorMap = new byte[256 * 4]; // BGRA
+        for (int v = 0; v < 256; v++)
+        {
+            double t = v / 255.0;
+            byte cr, cg, cb;
+            if (t < 0.2)      { double s = t / 0.2;
+                cr = 0; cg = (byte)(s * 0x80); cb = (byte)(0x60 + s * 0x9F); }
+            else if (t < 0.4) { double s = (t - 0.2) / 0.2;
+                cr = 0; cg = (byte)(0x80 + s * 0x7F); cb = (byte)(0xFF - s * 0x80); }
+            else if (t < 0.6) { double s = (t - 0.4) / 0.2;
+                cr = (byte)(s * 0xFF); cg = 0xFF; cb = (byte)(0x7F - s * 0x7F); }
+            else if (t < 0.8) { double s = (t - 0.6) / 0.2;
+                cr = 0xFF; cg = (byte)(0xFF - s * 0x80); cb = 0; }
+            else              { double s = (t - 0.8) / 0.2;
+                cr = 0xFF; cg = (byte)(0x7F + s * 0x80); cb = (byte)(s * 0xFF); }
+            colorMap[v * 4 + 0] = cb;  // B
+            colorMap[v * 4 + 1] = cg;  // G
+            colorMap[v * 4 + 2] = cr;  // R
+            colorMap[v * 4 + 3] = (byte)(v == 0 ? 8 : 40 + (int)(t * 80)); // alpha: low for padding, semi for content
+        }
+
+        // Render slices along Z axis as textured quads
+        for (int zSlice = 0; zSlice < dim; zSlice++)
+        {
+            // Build a bitmap for this Z slice (dim × dim pixels)
+            var bmp = new System.Windows.Media.Imaging.WriteableBitmap(
+                dim, dim, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null);
+            var pixels = new byte[dim * dim * 4];
+
+            for (int row = 0; row < dim; row++)
+            {
+                for (int col = 0; col < dim; col++)
+                {
+                    int byteIndex = zSlice * sliceArea + row * dim + col;
+                    byte val = byteIndex < usableBytes ? _fileData[byteIndex] : (byte)0;
+                    int pi = (row * dim + col) * 4;
+                    pixels[pi + 0] = colorMap[val * 4 + 0];
+                    pixels[pi + 1] = colorMap[val * 4 + 1];
+                    pixels[pi + 2] = colorMap[val * 4 + 2];
+                    pixels[pi + 3] = colorMap[val * 4 + 3];
+                }
+            }
+            bmp.WritePixels(new System.Windows.Int32Rect(0, 0, dim, dim), pixels, dim * 4, 0);
+
+            // Build a quad at z-position for this slice
+            double zPos = zSlice * spacing - half + spacing / 2.0;
+            var mesh = new MeshGeometry3D();
+            mesh.Positions.Add(new Point3D(-half, -half, -zPos));
+            mesh.Positions.Add(new Point3D( half, -half, -zPos));
+            mesh.Positions.Add(new Point3D( half,  half, -zPos));
+            mesh.Positions.Add(new Point3D(-half,  half, -zPos));
+
+            mesh.TextureCoordinates.Add(new System.Windows.Point(0, 1));
+            mesh.TextureCoordinates.Add(new System.Windows.Point(1, 1));
+            mesh.TextureCoordinates.Add(new System.Windows.Point(1, 0));
+            mesh.TextureCoordinates.Add(new System.Windows.Point(0, 0));
+
+            mesh.TriangleIndices.Add(0); mesh.TriangleIndices.Add(1); mesh.TriangleIndices.Add(2);
+            mesh.TriangleIndices.Add(0); mesh.TriangleIndices.Add(2); mesh.TriangleIndices.Add(3);
+
+            var brush = new System.Windows.Media.ImageBrush(bmp) { Stretch = System.Windows.Media.Stretch.Fill };
+            var mat = new DiffuseMaterial(brush);
+            var model = new GeometryModel3D(mesh, mat) { BackMaterial = mat };
+            group.Children.Add(model);
+        }
+
+        // Also add X-axis slices for cross-sectional visibility when rotated
+        for (int xSlice = 0; xSlice < dim; xSlice++)
+        {
+            var bmp = new System.Windows.Media.Imaging.WriteableBitmap(
+                dim, dim, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null);
+            var pixels = new byte[dim * dim * 4];
+
+            for (int row = 0; row < dim; row++)       // Y
+            {
+                for (int col = 0; col < dim; col++)   // Z
+                {
+                    int byteIndex = col * sliceArea + row * dim + xSlice;
+                    byte val = byteIndex < usableBytes ? _fileData[byteIndex] : (byte)0;
+                    int pi = (row * dim + col) * 4;
+                    pixels[pi + 0] = colorMap[val * 4 + 0];
+                    pixels[pi + 1] = colorMap[val * 4 + 1];
+                    pixels[pi + 2] = colorMap[val * 4 + 2];
+                    pixels[pi + 3] = colorMap[val * 4 + 3];
+                }
+            }
+            bmp.WritePixels(new System.Windows.Int32Rect(0, 0, dim, dim), pixels, dim * 4, 0);
+
+            double xPos = xSlice * spacing - half + spacing / 2.0;
+            var mesh = new MeshGeometry3D();
+            mesh.Positions.Add(new Point3D(xPos, -half, -half));
+            mesh.Positions.Add(new Point3D(xPos, -half,  half));
+            mesh.Positions.Add(new Point3D(xPos,  half,  half));
+            mesh.Positions.Add(new Point3D(xPos,  half, -half));
+
+            mesh.TextureCoordinates.Add(new System.Windows.Point(0, 1));
+            mesh.TextureCoordinates.Add(new System.Windows.Point(1, 1));
+            mesh.TextureCoordinates.Add(new System.Windows.Point(1, 0));
+            mesh.TextureCoordinates.Add(new System.Windows.Point(0, 0));
+
+            mesh.TriangleIndices.Add(0); mesh.TriangleIndices.Add(1); mesh.TriangleIndices.Add(2);
+            mesh.TriangleIndices.Add(0); mesh.TriangleIndices.Add(2); mesh.TriangleIndices.Add(3);
+
+            var brush = new System.Windows.Media.ImageBrush(bmp) { Stretch = System.Windows.Media.Stretch.Fill };
+            var mat = new DiffuseMaterial(brush);
+            group.Children.Add(new GeometryModel3D(mesh, mat) { BackMaterial = mat });
+        }
+
+        DataModel3D.Content = group;
+        HighlightModel3D.Content = null; // no selection in voxel mode
+
+        // Zoom extents
+        double boundRadius = half * Math.Sqrt(3.0);
+        double fovRad = 60.0 * Math.PI / 180.0;
+        _camDist = boundRadius / Math.Sin(fovRad / 2.0) * 1.15;
+        UpdateCamera(0, 0, 0);
+
+        long bytesShown = Math.Min(_fileData.Length, totalVoxels);
+        double pctShown = 100.0 * bytesShown / _fileData.Length;
+        Txt3DInfo.Text = $"Voxel {dim}³ = {totalVoxels:N0} voxels  ({bytesShown:N0}/{_fileData.Length:N0} bytes, {pctShown:F0}%)\n{dim * 2} slice planes (Z + X)  ·  Drag=rotate  scroll=zoom";
     }
 
     private static void AddCube(Point3DCollection positions, Int32Collection indices,
@@ -2640,13 +2908,28 @@ public partial class MainWindow : Window
     /// </summary>
     private void Reset3DCamera()
     {
-        if (_result == null || _3dNumPages <= 0) return;
+        if (_result == null) return;
+        // Voxel mode: use voxel cube dimensions
+        if (_3dLayoutMode == 4)
+        {
+            double half = _3dVoxelDim * _3dSpacing / 2.0;
+            double boundRadius = half * Math.Sqrt(3.0);
+            double fovRad = 60.0 * Math.PI / 180.0;
+            _camDist = boundRadius / Math.Sin(fovRad / 2.0) * 1.15;
+            _camTheta = 0.6; _camPhi = 0.5;
+            UpdateCamera(0, 0, 0);
+            return;
+        }
+        if (_3dNumPages <= 0) return;
+        bool isHCP = _3dLayoutMode == 3;
+        double ySpace = isHCP ? _3dSpacing * Math.Sqrt(3.0) / 2.0 : _3dSpacing;
+        double zSpace = isHCP ? _3dSpacing * Math.Sqrt(6.0) / 3.0 : _3dSpacing;
         double extX = _3dPagesPerRow * _3dSpacing / 2.0;
-        double extY = _3dPagesPerCol * _3dSpacing / 2.0;
-        double extZ = _3dLayers      * _3dSpacing / 2.0;
-        double boundRadius = Math.Sqrt(extX * extX + extY * extY + extZ * extZ);
-        double fovRad = 60.0 * Math.PI / 180.0;
-        _camDist  = boundRadius / Math.Sin(fovRad / 2.0) * 1.15;
+        double extY = _3dPagesPerCol * ySpace / 2.0;
+        double extZ = _3dLayers      * zSpace / 2.0;
+        double boundRadius2 = Math.Sqrt(extX * extX + extY * extY + extZ * extZ);
+        double fovRad2 = 60.0 * Math.PI / 180.0;
+        _camDist  = boundRadius2 / Math.Sin(fovRad2 / 2.0) * 1.15;
         _camTheta = 0.6;
         _camPhi   = 0.5;
         UpdateCamera(0, 0, 0);
@@ -2675,9 +2958,17 @@ public partial class MainWindow : Window
         var hlIdx = new Int32Collection();
         var hlColors = new List<Color>();
 
-        double offX = (_3dPagesPerRow - 1) * _3dSpacing / 2.0;
-        double offY = (_3dPagesPerCol - 1) * _3dSpacing / 2.0;
-        double offZ = (_3dLayers - 1) * _3dSpacing / 2.0;
+        bool isHCP = _3dLayoutMode == 3;
+        double sp = _3dSpacing;
+        double hcpRowSpY   = isHCP ? sp * Math.Sqrt(3.0) / 2.0 : sp;
+        double hcpLayerSpZ = isHCP ? sp * Math.Sqrt(6.0) / 3.0 : sp;
+        double hcpRowShX   = isHCP ? sp * 0.5 : 0;
+        double hcpLayShX   = isHCP ? sp * 0.25 : 0;
+        double hcpLayShY   = isHCP ? sp * Math.Sqrt(3.0) / 6.0 : 0;
+
+        double offX = (_3dPagesPerRow - 1) * sp / 2.0;
+        double offY = (_3dPagesPerCol - 1) * (isHCP ? hcpRowSpY : sp) / 2.0;
+        double offZ = (_3dLayers - 1) * (isHCP ? hcpLayerSpZ : sp) / 2.0;
 
         foreach (int hi in _selectedPageIndices)
         {
@@ -2686,8 +2977,27 @@ public partial class MainWindow : Window
             int hRem = hi % (_3dPagesPerRow * _3dPagesPerCol);
             int hy = hRem / _3dPagesPerRow;
             int hx = hRem % _3dPagesPerRow;
-            AddCube(hlPos, hlIdx, hlColors,
-                hx * _3dSpacing - offX, hy * _3dSpacing - offY, -(hz * _3dSpacing - offZ), 1.08, Colors.White);
+
+            double px, py, pz;
+            if (isHCP)
+            {
+                bool oddRow = (hy % 2) == 1;
+                bool oddLayer = (hz % 2) == 1;
+                px = hx * sp + (oddRow ? hcpRowShX : 0) + (oddLayer ? hcpLayShX : 0) - offX;
+                py = hy * hcpRowSpY + (oddLayer ? hcpLayShY : 0) - offY;
+                pz = -(hz * hcpLayerSpZ - offZ);
+            }
+            else
+            {
+                px = hx * sp - offX;
+                py = hy * sp - offY;
+                pz = -(hz * sp - offZ);
+            }
+
+            if (isHCP)
+                AddSphere(hlPos, hlIdx, hlColors, px, py, pz, sp / 2.0 * 1.04, 8, Colors.White);
+            else
+                AddCube(hlPos, hlIdx, hlColors, px, py, pz, 1.08, Colors.White);
         }
 
         if (hlPos.Count == 0)
@@ -2796,17 +3106,44 @@ public partial class MainWindow : Window
             {
                 Point3D hitPt = rayResult.PointHit;
                 double s = _3dSpacing;
-                double offX = (_3dPagesPerRow - 1) * s / 2.0;
-                double offY = (_3dPagesPerCol - 1) * s / 2.0;
-                double offZ = (_3dLayers - 1) * s / 2.0;
+                bool isHCP = _3dLayoutMode == 3;
 
-                int gx = (int)Math.Round((hitPt.X + offX) / s);
-                int gy = (int)Math.Round((hitPt.Y + offY) / s);
-                int gz = (int)Math.Round((-hitPt.Z + offZ) / s);
+                int gx, gy, gz;
 
-                gx = Math.Clamp(gx, 0, _3dPagesPerRow - 1);
-                gy = Math.Clamp(gy, 0, _3dPagesPerCol - 1);
-                gz = Math.Clamp(gz, 0, Math.Max(0, _3dLayers - 1));
+                if (isHCP)
+                {
+                    // HCP: reverse the offset/shift math to find nearest grid cell
+                    double hcpRowSpY   = s * Math.Sqrt(3.0) / 2.0;
+                    double hcpLayerSpZ = s * Math.Sqrt(6.0) / 3.0;
+                    double offX2 = (_3dPagesPerRow - 1) * s / 2.0;
+                    double offY2 = (_3dPagesPerCol - 1) * hcpRowSpY / 2.0;
+                    double offZ2 = (_3dLayers - 1) * hcpLayerSpZ / 2.0;
+
+                    gz = (int)Math.Round((-hitPt.Z + offZ2) / hcpLayerSpZ);
+                    gz = Math.Clamp(gz, 0, Math.Max(0, _3dLayers - 1));
+                    bool oddLayer = (gz % 2) == 1;
+
+                    double adjY = hitPt.Y - (oddLayer ? s * Math.Sqrt(3.0) / 6.0 : 0) + offY2;
+                    gy = (int)Math.Round(adjY / hcpRowSpY);
+                    gy = Math.Clamp(gy, 0, _3dPagesPerCol - 1);
+                    bool oddRow = (gy % 2) == 1;
+
+                    double adjX = hitPt.X - (oddRow ? s * 0.5 : 0) - (oddLayer ? s * 0.25 : 0) + offX2;
+                    gx = (int)Math.Round(adjX / s);
+                    gx = Math.Clamp(gx, 0, _3dPagesPerRow - 1);
+                }
+                else
+                {
+                    double offX2 = (_3dPagesPerRow - 1) * s / 2.0;
+                    double offY2 = (_3dPagesPerCol - 1) * s / 2.0;
+                    double offZ2 = (_3dLayers - 1) * s / 2.0;
+                    gx = (int)Math.Round((hitPt.X + offX2) / s);
+                    gy = (int)Math.Round((hitPt.Y + offY2) / s);
+                    gz = (int)Math.Round((-hitPt.Z + offZ2) / s);
+                    gx = Math.Clamp(gx, 0, _3dPagesPerRow - 1);
+                    gy = Math.Clamp(gy, 0, _3dPagesPerCol - 1);
+                    gz = Math.Clamp(gz, 0, Math.Max(0, _3dLayers - 1));
+                }
 
                 int pageIdx = gz * (_3dPagesPerRow * _3dPagesPerCol) + gy * _3dPagesPerRow + gx;
                 if (pageIdx >= 0 && pageIdx < _3dNumPages)
@@ -3462,7 +3799,7 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>Export manual regions to JSON, CSV, or RE tool scripts.</summary>
+    /// <summary>Export manual regions to JSON, CSV, or analysis tool scripts.</summary>
     private void BtnExportManualRegions_Click(object sender, RoutedEventArgs e)
     {
         if (_manualRegions.Count == 0 || _result == null) return;
@@ -3837,7 +4174,7 @@ public partial class MainWindow : Window
         if (_fileData == null) return;
         if (_tileMode) { UpdateAllTiles(); return; }
         var sel  = _selectedPageIndices.Count > 0 ? _selectedPageIndices : null;
-        // ComboBox index 0 = "All Views" (tile mode), 1–6 = individual viz modes 0–5
+        // ComboBox index 0 = "All Views" (tile mode), 1–8 = individual viz modes 0–7
         int mode = (CboPlotMode?.SelectedIndex ?? 1) - 1;
         if (mode < 0) mode = 0;
         RenderForMode(mode, _fileData, sel);
@@ -3846,15 +4183,15 @@ public partial class MainWindow : Window
     // ── Tile-overview helpers ─────────────────────────────────────────
 
     /// <summary>
-    /// Render all 6 visualization modes and push their bitmaps into the tile Images.
+    /// Render all 8 visualization modes and push their bitmaps into the tile Images.
     /// Uses DotPlotImage as the scratch render target, then snapshots Source to each tile.
     /// </summary>
     private void UpdateAllTiles()
     {
         if (_fileData == null) return;
         var sel = _selectedPageIndices.Count > 0 ? _selectedPageIndices : null;
-        var tileImgs = new System.Windows.Controls.Image[] { TileImg0, TileImg1, TileImg2, TileImg3, TileImg4, TileImg5, TileImg6 };
-        for (int m = 0; m < 7; m++)
+        var tileImgs = new System.Windows.Controls.Image[] { TileImg0, TileImg1, TileImg2, TileImg3, TileImg4, TileImg5, TileImg6, TileImg7 };
+        for (int m = 0; m < 8; m++)
         {
             RenderForMode(m, _fileData, sel);
             tileImgs[m].Source = DotPlotImage.Source;
@@ -3876,6 +4213,7 @@ public partial class MainWindow : Window
             case 4: DrawParallelCoords (data, sel); break;
             case 5: DrawRadViz         (data, sel); break;
             case 6: DrawAutocorrelation(data, sel); break;
+            case 7: DrawBytePresenceMap(data, sel); break;
         }
     }
 
@@ -3945,7 +4283,7 @@ public partial class MainWindow : Window
         ParamStrip.Visibility = Visibility.Visible;
 
         // Mode indices (ComboBox): 1=BytePair, 2=Histogram, 3=HeatMap,
-        //   4=Waveform, 5=ParallelCoords, 6=RadViz, 7=Autocorrelation
+        //   4=Waveform, 5=ParallelCoords, 6=RadViz, 7=Autocorrelation, 8=BytePresence
         PanelStride.Visibility  = idx == 1 ? Visibility.Visible : Visibility.Collapsed;
         PanelMaxLag.Visibility  = idx == 7 ? Visibility.Visible : Visibility.Collapsed;
         PanelScope.Visibility   = idx == 7 ? Visibility.Visible : Visibility.Collapsed;
@@ -4404,9 +4742,17 @@ public partial class MainWindow : Window
         int wrapW     = Math.Max(1, _vizWrapWidth);
 
         // Fold: convert wrap width (bytes) into a block-count fold period.
-        // When wrapW < total file size, blocks at the same offset within the fold
-        // are averaged, revealing periodic entropy patterns at that period.
         int foldBlocks = Math.Max(1, wrapW / Math.Max(1, bs));
+
+        // ── When fold period is too small for a meaningful bar chart,
+        //    switch to a byte-level folded heatmap:
+        //    X = byte position within wrap period, Y = repetition row, color = byte value.
+        if (foldBlocks < 8 && wrapW < data.Length)
+        {
+            DrawEntropyWaveform_ByteHeatmap(data, wrapW, outW, outH);
+            return;
+        }
+
         bool folded    = foldBlocks < numBlocks;
 
         double[] displayMap;
@@ -4545,6 +4891,86 @@ public partial class MainWindow : Window
         if (TxtDotPlotInfo != null)
             TxtDotPlotInfo.Text =
                 $"{numBlocks} blocks  ·  avg {avgEntropy:F2}  ·  max 8.0  ·  block {bs}B{foldNote}";
+    }
+
+    /// <summary>
+    /// Byte-level folded heatmap for Entropy Waveform when block-level fold is too small.
+    /// X = byte position within wrap period (0..wrapW-1).
+    /// Y = repetition row (how many times the wrap period repeats).
+    /// Color = byte value through blue→cyan→green→yellow→red→white heatmap.
+    /// Reveals byte-level periodicity that block-level averaging would collapse.
+    /// </summary>
+    private void DrawEntropyWaveform_ByteHeatmap(byte[] data, int wrapW,
+                                                  int outW = 0, int outH = 0)
+    {
+        int numRows = (data.Length + wrapW - 1) / wrapW;
+        int W = outW > 0 ? outW : Math.Min(wrapW, 2048);
+        int H = outH > 0 ? outH : Math.Min(numRows, 2048);
+        if (W < 1 || H < 1) return;
+
+        var pixels = new byte[W * H * 4];
+        // Dark background
+        for (int i = 0; i < pixels.Length; i += 4)
+        { pixels[i] = 0x14; pixels[i+1] = 0x14; pixels[i+2] = 0x1E; pixels[i+3] = 255; }
+
+        for (int py = 0; py < H; py++)
+        {
+            // Which source rows map to this pixel row
+            int rowStart = (int)((long)py * numRows / H);
+            int rowEnd   = Math.Max(rowStart + 1, (int)((long)(py + 1) * numRows / H));
+            rowEnd = Math.Min(rowEnd, numRows);
+
+            for (int px = 0; px < W; px++)
+            {
+                // Which source columns map to this pixel column
+                int colStart = (int)((long)px * wrapW / W);
+                int colEnd   = Math.Max(colStart + 1, (int)((long)(px + 1) * wrapW / W));
+                colEnd = Math.Min(colEnd, wrapW);
+
+                // Average byte values over the source rectangle
+                double sum = 0; int cnt = 0;
+                for (int row = rowStart; row < rowEnd; row++)
+                {
+                    long baseOff = (long)row * wrapW;
+                    for (int col = colStart; col < colEnd; col++)
+                    {
+                        long idx = baseOff + col;
+                        if (idx < data.Length)
+                        {
+                            sum += data[idx];
+                            cnt++;
+                        }
+                    }
+                }
+                if (cnt == 0) continue;
+
+                double t = (sum / cnt) / 255.0;
+                // Blue→Cyan→Green→Yellow→Red→White heatmap
+                byte r, g, b;
+                if (t < 0.2)       { float s = (float)(t / 0.2);
+                    r = 0; g = 0; b = (byte)(0x40 + s * 0xBF); }
+                else if (t < 0.4)  { float s = (float)((t - 0.2) / 0.2);
+                    r = 0; g = (byte)(s * 0xFF); b = 0xFF; }
+                else if (t < 0.6)  { float s = (float)((t - 0.4) / 0.2);
+                    r = 0; g = 0xFF; b = (byte)(0xFF - s * 0xFF); }
+                else if (t < 0.8)  { float s = (float)((t - 0.6) / 0.2);
+                    r = (byte)(s * 0xFF); g = 0xFF; b = 0; }
+                else               { float s = (float)((t - 0.8) / 0.2);
+                    r = 0xFF; g = (byte)(0xFF - s * 0x80); b = (byte)(s * 0x60); }
+
+                int pidx = (py * W + px) * 4;
+                pixels[pidx] = b; pixels[pidx+1] = g; pixels[pidx+2] = r; pixels[pidx+3] = 255;
+            }
+        }
+
+        var bmp = new System.Windows.Media.Imaging.WriteableBitmap(
+            W, H, 96, 96, System.Windows.Media.PixelFormats.Bgr32, null);
+        bmp.WritePixels(new System.Windows.Int32Rect(0, 0, W, H), pixels, W * 4, 0);
+        DotPlotImage.Source = bmp;
+
+        if (TxtDotPlotInfo != null)
+            TxtDotPlotInfo.Text =
+                $"byte heatmap  ·  wrap {wrapW}  ·  {numRows} rows × {wrapW} cols  ·  {data.Length:N0} bytes";
     }
 
     // ── Right panel: Parallel Coordinates ────────────────────────────────
@@ -4967,8 +5393,9 @@ public partial class MainWindow : Window
         int acWrapW   = Math.Max(1, _vizWrapWidth);
 
         // Wrap-width folding: fold block columns at wrap period
+        // When fold period < 8, the image collapses to a line — don't fold, show raw blocks
         int acFoldBlocks = Math.Max(1, acWrapW / Math.Max(1, bs));
-        bool acFolded    = acFoldBlocks < numBlocks;
+        bool acFolded    = acFoldBlocks >= 8 && acFoldBlocks < numBlocks;
         int displayBlocks = acFolded ? acFoldBlocks : numBlocks;
 
         // Image dimensions: one column per display-block, rows for lags 1..maxLag
@@ -5174,6 +5601,133 @@ public partial class MainWindow : Window
             if (e2 >= dy) { err += dy; x0 += sx; }
             if (e2 <= dx) { err += dx; y0 += sy; }
         }
+    }
+
+    // ── Right panel: Byte Presence / Frequency Map ──────────────────────
+
+    /// <summary>
+    /// 256-column × N-row grid.  Columns = byte values 0–255.
+    /// Rows = consecutive windows of the file (window size = wrap width).
+    /// Cell color = log-normalised frequency of that byte value within the window.
+    /// Reveals: text = bright bars in 32–127; compression = nearly full rows;
+    /// padding = single bright column (0x00 or 0xFF); encoding transitions = abrupt
+    /// row-to-row colour changes.
+    /// With selection: non-selected rows are dimmed; selected rows use orange→yellow.
+    /// </summary>
+    private void DrawBytePresenceMap(byte[]? data, HashSet<int>? highlightBlocks = null)
+    {
+        if (data == null || data.Length == 0)
+        {
+            DotPlotImage.Source = null;
+            if (TxtDotPlotInfo != null) TxtDotPlotInfo.Text = "no data";
+            return;
+        }
+
+        const int cols = 256;                        // one column per byte value
+        int wrapW = Math.Max(1, _vizWrapWidth);      // window size in bytes
+        int numRows = (data.Length + wrapW - 1) / wrapW;
+        // Cap render height to 512 rows — taller than that hurts readability
+        int renderRows = Math.Min(numRows, 512);
+
+        // Accumulate per-row byte frequency: freq[row * 256 + byteValue]
+        var freq = new int[renderRows * cols];
+        for (int i = 0; i < data.Length; i++)
+        {
+            int row = (int)((long)i / wrapW);
+            // Map actual row to render row (downsample if needed)
+            int rr = numRows <= renderRows ? row : (int)((long)row * renderRows / numRows);
+            if (rr >= renderRows) rr = renderRows - 1;
+            freq[rr * cols + data[i]]++;
+        }
+
+        // Find global max frequency for log normalisation
+        int maxFreq = 1;
+        foreach (int f in freq) if (f > maxFreq) maxFreq = f;
+        double logMax = Math.Log(maxFreq + 1);
+
+        // Build highlighted row set from selected blocks
+        bool[]? hlRow = null;
+        if (highlightBlocks != null && highlightBlocks.Count > 0 && _result != null)
+        {
+            hlRow = new bool[renderRows];
+            int bs = _result.EntropyBlockSize;
+            foreach (int bi in highlightBlocks)
+            {
+                long byteStart = (long)bi * bs;
+                long byteEnd   = Math.Min(byteStart + bs, data.Length);
+                int rowStart = (int)(byteStart / wrapW);
+                int rowEnd   = (int)((byteEnd - 1) / wrapW);
+                for (int r = rowStart; r <= rowEnd; r++)
+                {
+                    int rr = numRows <= renderRows ? r : (int)((long)r * renderRows / numRows);
+                    if (rr >= 0 && rr < renderRows) hlRow[rr] = true;
+                }
+            }
+        }
+        bool hasHL = hlRow != null;
+
+        // Build pixel buffer (cols × renderRows)
+        var pixels = new byte[cols * renderRows * 4];
+
+        for (int row = 0; row < renderRows; row++)
+        {
+            bool rowHL = hasHL && hlRow![row];
+            for (int bv = 0; bv < cols; bv++)
+            {
+                int count = freq[row * cols + bv];
+                double t = count > 0 ? Math.Log(count + 1) / logMax : 0;
+                int pidx = (row * cols + bv) * 4;
+
+                byte r, g, b;
+                if (hasHL)
+                {
+                    if (rowHL && t > 0.001)
+                    {
+                        // Orange → yellow for highlighted rows
+                        r = (byte)(0xC0 + t * 0x3F);
+                        g = (byte)(t * 0xFF);
+                        b = 0x00;
+                    }
+                    else if (t > 0.001)
+                    {
+                        // Dim non-highlighted
+                        r = (byte)(t * 0x28);
+                        g = (byte)(t * 0x38);
+                        b = (byte)(0x18 + t * 0x60);
+                    }
+                    else { r = 0x08; g = 0x08; b = 0x14; }
+                }
+                else
+                {
+                    // No selection: cool-to-warm ramp
+                    if (t < 0.001) { r = 0x14; g = 0x14; b = 0x1E; }
+                    else if (t < 0.33)
+                    {
+                        double s = t / 0.33;
+                        r = 0x00; g = (byte)(s * 0x60); b = (byte)(0x40 + s * 0xBF);
+                    }
+                    else if (t < 0.66)
+                    {
+                        double s = (t - 0.33) / 0.33;
+                        r = (byte)(s * 0xFF); g = (byte)(0x60 + s * 0x9F); b = (byte)(0xFF * (1 - s * 0.5));
+                    }
+                    else
+                    {
+                        double s = (t - 0.66) / 0.34;
+                        r = 0xFF; g = (byte)(0xFF - s * 0x60); b = (byte)(0x80 * (1 - s));
+                    }
+                }
+                pixels[pidx] = b; pixels[pidx+1] = g; pixels[pidx+2] = r; pixels[pidx+3] = 255;
+            }
+        }
+
+        var bmp = new System.Windows.Media.Imaging.WriteableBitmap(
+            cols, renderRows, 96, 96, System.Windows.Media.PixelFormats.Bgr32, null);
+        bmp.WritePixels(new System.Windows.Int32Rect(0, 0, cols, renderRows), pixels, cols * 4, 0);
+        SetPlotBitmap(bmp);
+
+        if (TxtDotPlotInfo != null)
+            TxtDotPlotInfo.Text = $"byte presence  ·  256 values × {numRows} windows (wrap {wrapW})  ·  {data.Length:N0} bytes";
     }
 
     // ── Utilities ───────────────────────────────────────────────────────
@@ -5398,6 +5952,7 @@ public partial class MainWindow : Window
         Save("byte_pair", () => DrawDotPlot(bytes, highlight));
         Save("histogram",  () => DrawHistogram(bytes, highlight));
         Save("heatmap",    () => DrawPositionHeatMap(bytes, highlight));
+        Save("byte_presence", () => DrawBytePresenceMap(bytes, highlight));
 
         if (fullFile)
         {
@@ -5555,10 +6110,10 @@ public partial class MainWindow : Window
                 : "";
         }
 
-        string[] allKeys   = ["byte_pair","histogram","heatmap","entropy_waveform","parallel_coords","radviz"];
-        string[] allLabels = ["Byte-Pair","Histogram","Pos.HeatMap","Entropy Waveform","Parallel Coords","RadViz"];
-        string[] subKeys   = ["byte_pair","histogram","heatmap"];
-        string[] subLabels = ["Byte-Pair","Histogram","Pos.HeatMap"];
+        string[] allKeys   = ["byte_pair","histogram","heatmap","byte_presence","entropy_waveform","parallel_coords","radviz"];
+        string[] allLabels = ["Byte-Pair","Histogram","Pos.HeatMap","Byte Presence","Entropy Waveform","Parallel Coords","RadViz"];
+        string[] subKeys   = ["byte_pair","histogram","heatmap","byte_presence"];
+        string[] subLabels = ["Byte-Pair","Histogram","Pos.HeatMap","Byte Presence"];
 
         var sb = new System.Text.StringBuilder();
         sb.Append(HtmlHead(_result!.FileName, _result.FileSizeHuman));

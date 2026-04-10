@@ -14,6 +14,8 @@
     <Version>1.0.0</Version>
     <Company>BinaryCarver</Company>
     <Product>BinaryCarver — Region Carving Workbench</Product>
+    <!-- Only emit en (English) satellite resources — kills the 13 language folders -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <!-- Exclude reference materials from compilation — they're research/reference code only -->

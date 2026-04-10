@@ -82,12 +82,13 @@
         <!-- ═══════ MAIN CONTENT ═══════ -->
         <Grid Grid.Row="1">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>             <!-- 0: byte map + entropy bars -->
+                <RowDefinition Height="Auto"/>             <!-- 0: controls + byte map bar -->
                 <RowDefinition Height="*" MinHeight="200"/> <!-- 1: main 3-column area -->
+                <RowDefinition Height="Auto"/>             <!-- 2: entropy bars (bottom) -->
             </Grid.RowDefinitions>
 
             <!-- ── Drop zone (shown when no file loaded) ── -->
-            <Border x:Name="DropZone" Grid.Row="0" Grid.RowSpan="2"
+            <Border x:Name="DropZone" Grid.Row="0" Grid.RowSpan="3"
                     Background="{StaticResource SurfaceBrush}"
                     BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="2" CornerRadius="12"
@@ -107,7 +108,7 @@
                 </StackPanel>
             </Border>
 
-            <!-- ── Visual byte map + entropy heatmap ── -->
+            <!-- ── Visual byte map (top) ── -->
             <Border x:Name="ByteMapPanel" Grid.Row="0" Visibility="Collapsed"
                     Background="{StaticResource SurfaceBrush}"
                     BorderBrush="{StaticResource BorderBrush}"
@@ -115,59 +116,8 @@
                     Padding="8,4">
                 <StackPanel>
 
-                    <!-- ── Row 1: controls + color legend (single compact line) ── -->
+                    <!-- ── Row 1: color legend (single compact line) ── -->
                     <DockPanel Margin="0,0,0,3" LastChildFill="False">
-                        <!-- Right: visualization controls (no border container) -->
-                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="Block:" FontSize="9" VerticalAlignment="Center"
-                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,3,0"/>
-                            <ComboBox x:Name="CboBlockSize" Width="58" FontSize="9"
-                                      SelectedIndex="0" SelectionChanged="CboBlockSize_Changed">
-                                <ComboBoxItem Content="64"/>
-                                <ComboBoxItem Content="128"/>
-                                <ComboBoxItem Content="256"/>
-                                <ComboBoxItem Content="512"/>
-                                <ComboBoxItem Content="1024"/>
-                                <ComboBoxItem Content="2048"/>
-                                <ComboBoxItem Content="4096"/>
-                                <ComboBoxItem Content="8192"/>
-                            </ComboBox>
-                            <TextBlock Text="Color:" FontSize="9" VerticalAlignment="Center"
-                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="8,0,3,0"/>
-                            <ComboBox x:Name="CboColorMode" Width="95" FontSize="9"
-                                      SelectedIndex="0" SelectionChanged="CboColorMode_Changed">
-                                <ComboBoxItem Content="Byte Entropy"/>
-                                <ComboBoxItem Content="Nibble Entropy"/>
-                                <ComboBoxItem Content="Bit Entropy"/>
-                                <ComboBoxItem Content="Bigram Entropy"/>
-                                <ComboBoxItem Content="Divergence"/>
-                                <ComboBoxItem Content="Delta"/>
-                                <ComboBoxItem Content="Region Type"/>
-                                <ComboBoxItem Content="Gap Class"/>
-                            </ComboBox>
-                            <TextBlock Text="3D:" FontSize="9" VerticalAlignment="Center"
-                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="8,0,3,0"/>
-                            <ComboBox x:Name="Cbo3DShape" Width="68" FontSize="9"
-                                      SelectedIndex="0" SelectionChanged="Cbo3DShape_Changed">
-                                <ComboBoxItem Content="Cubes"/>
-                                <ComboBoxItem Content="Bars"/>
-                                <ComboBoxItem Content="Spheres"/>
-                            </ComboBox>
-                            <TextBlock Text="Spread:" FontSize="9" VerticalAlignment="Center"
-                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="8,0,3,0"/>
-                            <Slider x:Name="SliderSpacing" Width="70" Minimum="1.1" Maximum="4.0"
-                                    Value="1.1" VerticalAlignment="Center"
-                                    TickFrequency="0.1" IsSnapToTickEnabled="False"
-                                    ValueChanged="SliderSpacing_Changed"
-                                    ToolTip="Spread blocks apart in 3D view"/>
-                            <TextBlock x:Name="TxtSpacingValue" Text="1.1" FontSize="9" Width="22"
-                                       VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}"
-                                       Margin="2,0,6,0"/>
-                            <Button x:Name="Btn3DToggle" Content="Hide 3D"
-                                    Click="Btn3DToggle_Click"
-                                    Style="{StaticResource SecondaryButton}"
-                                    FontSize="9" Padding="6,3"/>
-                        </StackPanel>
                         <!-- Left: swatch-only legend (hover for name, no text labels) -->
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Border Width="10" Height="10" Background="#4CAF50" CornerRadius="1" Margin="0,0,3,0" ToolTip="PE/EXE"/>
@@ -194,90 +144,95 @@
                             ClipToBounds="True"
                             ToolTip="File map — click to inspect, hover for region info"/>
 
-                    <!-- ── Row 3: entropy bars ── -->
-                    <DockPanel Margin="0,3,0,0" LastChildFill="True">
+                </StackPanel>
+            </Border>
 
-                        <!-- Left: 6 entropy tracks + compact inline legend -->
-                        <StackPanel>
-                            <DockPanel Margin="0,0,0,1">
-                                <TextBlock Text="Byte" FontSize="9" Width="42" VerticalAlignment="Center"
-                                           Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left"/>
-                                <Canvas x:Name="EntropyCanvas" Height="15"
-                                        Background="{StaticResource BackgroundBrush}" ClipToBounds="True"
-                                        ToolTip="Byte entropy (base-256): 0–8 bits"/>
-                            </DockPanel>
-                            <DockPanel Margin="0,0,0,1">
-                                <TextBlock Text="Nibble" FontSize="9" Width="42" VerticalAlignment="Center"
-                                           Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left"/>
-                                <Canvas x:Name="NibbleEntropyCanvas" Height="15"
-                                        Background="{StaticResource BackgroundBrush}" ClipToBounds="True"
-                                        ToolTip="Nibble entropy (base-16): 0–4 bits. Reveals hex-structured data"/>
-                            </DockPanel>
-                            <DockPanel Margin="0,0,0,1">
-                                <TextBlock Text="Bit" FontSize="9" Width="42" VerticalAlignment="Center"
-                                           Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left"/>
-                                <Canvas x:Name="BitEntropyCanvas" Height="15"
-                                        Background="{StaticResource BackgroundBrush}" ClipToBounds="True"
-                                        ToolTip="Bit entropy (base-2): 0–1 bit. Reveals bit-bias and fill patterns"/>
-                            </DockPanel>
-                            <DockPanel Margin="0,0,0,1">
-                                <TextBlock Text="Bigram" FontSize="9" Width="42" VerticalAlignment="Center"
-                                           Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left"/>
-                                <Canvas x:Name="BigramEntropyCanvas" Height="15"
-                                        Background="{StaticResource BackgroundBrush}" ClipToBounds="True"
-                                        ToolTip="Bigram entropy (byte pairs): 0–16 bits. Captures sequential structure"/>
-                            </DockPanel>
-                            <DockPanel Margin="0,0,0,1">
-                                <TextBlock Text="Diverg." FontSize="9" Width="42" VerticalAlignment="Center"
-                                           Foreground="{StaticResource WarningBrush}" DockPanel.Dock="Left"/>
-                                <Canvas x:Name="DivergenceCanvas" Height="15"
-                                        Background="{StaticResource BackgroundBrush}" ClipToBounds="True"
-                                        ToolTip="Cross-base divergence: bright = bases disagree = structural boundary"/>
-                            </DockPanel>
-                            <DockPanel Margin="0,0,0,1">
-                                <TextBlock Text="Delta" FontSize="9" Width="42" VerticalAlignment="Center"
-                                           Foreground="{StaticResource AccentBrush}" DockPanel.Dock="Left"/>
-                                <Canvas x:Name="DeltaEntropyCanvas" Height="15"
-                                        Background="{StaticResource BackgroundBrush}" ClipToBounds="True"
-                                        ToolTip="Delta entropy: rate of change between blocks. Spikes = boundaries."/>
-                            </DockPanel>
-                            <!-- Compact inline gradient legend -->
-                            <StackPanel Orientation="Horizontal" Margin="42,3,0,0" VerticalAlignment="Center">
-                                <TextBlock Text="Lo" FontSize="8" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
-                                <Border Width="64" Height="8" Margin="3,0,3,0" CornerRadius="1" VerticalAlignment="Center">
-                                    <Border.Background>
-                                        <LinearGradientBrush StartPoint="0,0.5" EndPoint="1,0.5">
-                                            <GradientStop Color="#2196F3" Offset="0"/>
-                                            <GradientStop Color="#4CAF50" Offset="0.25"/>
-                                            <GradientStop Color="#FFEB3B" Offset="0.5"/>
-                                            <GradientStop Color="#FF9800" Offset="0.75"/>
-                                            <GradientStop Color="#F44336" Offset="1"/>
-                                        </LinearGradientBrush>
-                                    </Border.Background>
-                                </Border>
-                                <TextBlock Text="Hi" FontSize="8" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                                <TextBlock Text="Diverg:" FontSize="8" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
-                                <Border Width="48" Height="8" Margin="3,0,3,0" CornerRadius="1" VerticalAlignment="Center">
-                                    <Border.Background>
-                                        <LinearGradientBrush StartPoint="0,0.5" EndPoint="1,0.5">
-                                            <GradientStop Color="#1A1A1A" Offset="0"/>
-                                            <GradientStop Color="#FF6F00" Offset="0.5"/>
-                                            <GradientStop Color="#FFFFFF" Offset="1"/>
-                                        </LinearGradientBrush>
-                                    </Border.Background>
-                                </Border>
-                                <TextBlock Text="→Bndry" FontSize="8" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </StackPanel>
-
+            <!-- ── Entropy bars (bottom of window) ── -->
+            <Border x:Name="EntropyBarsPanel" Grid.Row="2" Visibility="Collapsed"
+                    Background="{StaticResource SurfaceBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="0,1,0,0"
+                    Padding="8,3">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,1">
+                        <TextBlock Text="Byte" FontSize="9" Width="42" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left"/>
+                        <Canvas x:Name="EntropyCanvas" Height="15"
+                                Background="{StaticResource BackgroundBrush}" ClipToBounds="True"
+                                ToolTip="Byte entropy (base-256): 0–8 bits"/>
                     </DockPanel>
-
+                    <DockPanel Margin="0,0,0,1">
+                        <TextBlock Text="Nibble" FontSize="9" Width="42" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left"/>
+                        <Canvas x:Name="NibbleEntropyCanvas" Height="15"
+                                Background="{StaticResource BackgroundBrush}" ClipToBounds="True"
+                                ToolTip="Nibble entropy (base-16): 0–4 bits. Reveals hex-structured data"/>
+                    </DockPanel>
+                    <DockPanel Margin="0,0,0,1">
+                        <TextBlock Text="Bit" FontSize="9" Width="42" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left"/>
+                        <Canvas x:Name="BitEntropyCanvas" Height="15"
+                                Background="{StaticResource BackgroundBrush}" ClipToBounds="True"
+                                ToolTip="Bit entropy (base-2): 0–1 bit. Reveals bit-bias and fill patterns"/>
+                    </DockPanel>
+                    <DockPanel Margin="0,0,0,1">
+                        <TextBlock Text="Bigram" FontSize="9" Width="42" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}" DockPanel.Dock="Left"/>
+                        <Canvas x:Name="BigramEntropyCanvas" Height="15"
+                                Background="{StaticResource BackgroundBrush}" ClipToBounds="True"
+                                ToolTip="Bigram entropy (byte pairs): 0–16 bits. Captures sequential structure"/>
+                    </DockPanel>
+                    <DockPanel Margin="0,0,0,1">
+                        <TextBlock Text="Diverg." FontSize="9" Width="42" VerticalAlignment="Center"
+                                   Foreground="{StaticResource WarningBrush}" DockPanel.Dock="Left"/>
+                        <Canvas x:Name="DivergenceCanvas" Height="15"
+                                Background="{StaticResource BackgroundBrush}" ClipToBounds="True"
+                                ToolTip="Cross-base divergence: bright = bases disagree = structural boundary"/>
+                    </DockPanel>
+                    <DockPanel Margin="0,0,0,1">
+                        <TextBlock Text="Delta" FontSize="9" Width="42" VerticalAlignment="Center"
+                                   Foreground="{StaticResource AccentBrush}" DockPanel.Dock="Left"/>
+                        <Canvas x:Name="DeltaEntropyCanvas" Height="15"
+                                Background="{StaticResource BackgroundBrush}" ClipToBounds="True"
+                                ToolTip="Delta entropy: rate of change between blocks. Spikes = boundaries."/>
+                    </DockPanel>
+                    <!-- Compact inline gradient legend -->
+                    <StackPanel Orientation="Horizontal" Margin="42,3,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="Lo" FontSize="8" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                        <Border Width="64" Height="8" Margin="3,0,3,0" CornerRadius="1" VerticalAlignment="Center">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0.5" EndPoint="1,0.5">
+                                    <GradientStop Color="#2196F3" Offset="0"/>
+                                    <GradientStop Color="#4CAF50" Offset="0.25"/>
+                                    <GradientStop Color="#FFEB3B" Offset="0.5"/>
+                                    <GradientStop Color="#FF9800" Offset="0.75"/>
+                                    <GradientStop Color="#F44336" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                        <TextBlock Text="Hi" FontSize="8" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <TextBlock Text="Diverg:" FontSize="8" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                        <Border Width="48" Height="8" Margin="3,0,3,0" CornerRadius="1" VerticalAlignment="Center">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0.5" EndPoint="1,0.5">
+                                    <GradientStop Color="#1A1A1A" Offset="0"/>
+                                    <GradientStop Color="#FF6F00" Offset="0.5"/>
+                                    <GradientStop Color="#FFFFFF" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                        <TextBlock Text="→Bndry" FontSize="8" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
+                    </StackPanel>
                 </StackPanel>
             </Border>
 
             <!-- ── Main 3-column layout: Left panels | 3D | Byte-pair plot ── -->
             <Grid x:Name="ResultsPanel" Grid.Row="1" Visibility="Collapsed"
                   Margin="8,4,8,4">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>   <!-- 0: shared Block/Color controls strip -->
+                    <RowDefinition Height="*"/>      <!-- 1: main 3-column content -->
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="1*" MinWidth="180"/>
                     <ColumnDefinition Width="5"/>
@@ -286,14 +241,49 @@
                     <ColumnDefinition Width="1*" MinWidth="180"/>
                 </Grid.ColumnDefinitions>
 
+                <!-- ── Row 0: Block Size + Color Mode controls (spans 3D + 2D columns) ── -->
+                <Border Grid.Row="0" Grid.Column="2" Grid.ColumnSpan="3"
+                        Background="{StaticResource SurfaceBrush}"
+                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1"
+                        Padding="6,3" Margin="0,0,0,2">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="Block:" FontSize="9" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,3,0"/>
+                        <ComboBox x:Name="CboBlockSize" Width="58" FontSize="9"
+                                  SelectedIndex="0" SelectionChanged="CboBlockSize_Changed">
+                            <ComboBoxItem Content="64"/>
+                            <ComboBoxItem Content="128"/>
+                            <ComboBoxItem Content="256"/>
+                            <ComboBoxItem Content="512"/>
+                            <ComboBoxItem Content="1024"/>
+                            <ComboBoxItem Content="2048"/>
+                            <ComboBoxItem Content="4096"/>
+                            <ComboBoxItem Content="8192"/>
+                        </ComboBox>
+                        <TextBlock Text="Color:" FontSize="9" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="12,0,3,0"/>
+                        <ComboBox x:Name="CboColorMode" Width="95" FontSize="9"
+                                  SelectedIndex="0" SelectionChanged="CboColorMode_Changed">
+                            <ComboBoxItem Content="Byte Entropy"/>
+                            <ComboBoxItem Content="Nibble Entropy"/>
+                            <ComboBoxItem Content="Bit Entropy"/>
+                            <ComboBoxItem Content="Bigram Entropy"/>
+                            <ComboBoxItem Content="Divergence"/>
+                            <ComboBoxItem Content="Delta"/>
+                            <ComboBoxItem Content="Region Type"/>
+                            <ComboBoxItem Content="Gap Class"/>
+                        </ComboBox>
+                    </StackPanel>
+                </Border>
+
                 <!-- ════ LEFT COLUMN: Carved Regions + Manual Regions + Panels ════ -->
-                <Grid Grid.Column="0">
+                <Grid Grid.Column="0" Grid.Row="0" Grid.RowSpan="2">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="1*" MinHeight="80"/>   <!-- Carved Regions -->
+                        <RowDefinition Height="2*" MinHeight="60"/>    <!-- Carved Regions -->
                         <RowDefinition Height="5"/>
-                        <RowDefinition Height="1*" MinHeight="60"/>   <!-- Manual Regions -->
+                        <RowDefinition Height="2*" MinHeight="50"/>    <!-- Manual Regions -->
                         <RowDefinition Height="5"/>
-                        <RowDefinition Height="1*" MinHeight="60"/>   <!-- Range/Detail/Inspector -->
+                        <RowDefinition Height="5*" MinHeight="100"/>   <!-- Range/Detail/Inspector (largest) -->
                     </Grid.RowDefinitions>
 
                     <!-- Carved Regions -->
@@ -345,7 +335,7 @@
                                             Click="BtnExportManualRegions_Click"
                                             Style="{StaticResource SecondaryButton}" FontSize="9"
                                             Padding="6,2" IsEnabled="False" Margin="0,0,4,0"
-                                            ToolTip="Export manual regions to JSON, CSV, or RE tool script"/>
+                                            ToolTip="Export manual regions to JSON, CSV, or analysis tool script"/>
                                     <Button x:Name="BtnImportManualRegions" Content="Import"
                                             Click="BtnImportManualRegions_Click"
                                             Style="{StaticResource SecondaryButton}" FontSize="9"
@@ -380,11 +370,10 @@
                                   Background="{StaticResource BorderBrush}"/>
 
                     <!-- Range / Detail / Inspector panels stacked at bottom -->
-                    <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto">
-                        <StackPanel>
+                    <DockPanel Grid.Row="4" LastChildFill="True">
 
                             <!-- Custom Range Extraction -->
-                            <Border x:Name="RangePanel" Visibility="Collapsed"
+                            <Border x:Name="RangePanel" DockPanel.Dock="Top" Visibility="Collapsed"
                                     Background="{StaticResource SurfaceBrush}"
                                     BorderBrush="{StaticResource BorderBrush}"
                                     BorderThickness="0,1,0,0" Padding="8,5">
@@ -413,7 +402,7 @@
                             </Border>
 
                             <!-- Region Detail panel -->
-                            <Border x:Name="DetailPanel" Visibility="Collapsed"
+                            <Border x:Name="DetailPanel" DockPanel.Dock="Top" Visibility="Collapsed"
                                     Background="{StaticResource SurfaceBrush}"
                                     BorderBrush="{StaticResource BorderBrush}"
                                     BorderThickness="0,1,0,0" Padding="8,5">
@@ -442,26 +431,26 @@
                                              BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
                                              Padding="6,3" VerticalScrollBarVisibility="Auto"
                                              HorizontalScrollBarVisibility="Auto"
-                                             TextWrapping="NoWrap" MaxHeight="80" AcceptsReturn="True"/>
+                                             TextWrapping="NoWrap" MaxHeight="120" AcceptsReturn="True"/>
                                 </StackPanel>
                             </Border>
 
-                            <!-- Entropy Block Inspector -->
+                            <!-- Entropy Block Inspector (fills remaining space) -->
                             <Border x:Name="BlockInspectorPanel" Visibility="Collapsed"
                                     Background="{StaticResource SurfaceBrush}"
                                     BorderBrush="{StaticResource BorderBrush}"
                                     BorderThickness="0,1,0,0" Padding="8,5">
-                                <StackPanel>
-                                    <TextBlock Style="{StaticResource SectionHeader}" Text="BLOCK INSPECTOR"/>
-                                    <TextBlock x:Name="TxtBlockInfo" FontFamily="Consolas" FontSize="10"
+                                <DockPanel LastChildFill="True">
+                                    <TextBlock DockPanel.Dock="Top" Style="{StaticResource SectionHeader}" Text="BLOCK INSPECTOR"/>
+                                    <TextBlock DockPanel.Dock="Top" x:Name="TxtBlockInfo" FontFamily="Consolas" FontSize="10"
                                                Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0"/>
-                                    <TextBlock x:Name="TxtBlockEntropy" FontFamily="Consolas" FontSize="9"
+                                    <TextBlock DockPanel.Dock="Top" x:Name="TxtBlockEntropy" FontFamily="Consolas" FontSize="9"
                                                Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0"
                                                TextWrapping="Wrap"/>
-                                    <TextBlock x:Name="TxtBlockRange" FontFamily="Consolas" FontSize="10"
+                                    <TextBlock DockPanel.Dock="Top" x:Name="TxtBlockRange" FontFamily="Consolas" FontSize="10"
                                                Foreground="{StaticResource WarningBrush}" Margin="0,2,0,0"
                                                Visibility="Collapsed"/>
-                                    <WrapPanel Margin="0,5,0,0">
+                                    <WrapPanel DockPanel.Dock="Top" Margin="0,5,0,0">
                                         <Button Content="Extract Block" Click="BtnExtractBlock_Click"
                                                 Style="{StaticResource SecondaryButton}" FontSize="10" Padding="6,3"/>
                                         <Button Content="To Boundary" Click="BtnExtractToBoundary_Click"
@@ -480,6 +469,7 @@
                                                 Style="{StaticResource SecondaryButton}" Margin="4,0,0,0"
                                                 FontSize="10" Padding="6,3"/>
                                     </WrapPanel>
+                                    <!-- Hex preview fills all remaining space -->
                                     <TextBox x:Name="TxtBlockHexPreview"
                                              FontFamily="Consolas" FontSize="9" IsReadOnly="True"
                                              Background="{StaticResource BackgroundBrush}"
@@ -487,57 +477,141 @@
                                              BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
                                              Padding="5,3" VerticalScrollBarVisibility="Auto"
                                              HorizontalScrollBarVisibility="Auto"
-                                             TextWrapping="NoWrap" MaxHeight="80" Margin="0,5,0,0"
+                                             TextWrapping="NoWrap" Margin="0,5,0,0"
                                              AcceptsReturn="True"/>
-                                </StackPanel>
+                                </DockPanel>
                             </Border>
 
-                        </StackPanel>
-                    </ScrollViewer>
+                    </DockPanel>
                 </Grid>
 
                 <!-- Column Splitter: Left ↔ 3D -->
-                <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch"
+                <GridSplitter Grid.Row="1" Grid.Column="1" Width="5" HorizontalAlignment="Stretch"
                               Background="{StaticResource BorderBrush}"/>
 
                 <!-- ════ CENTER COLUMN: 3D View ════ -->
-                <Border x:Name="Panel3D" Grid.Column="2"
+                <Border x:Name="Panel3D" Grid.Row="1" Grid.Column="2"
                         Background="{StaticResource BackgroundBrush}"
                         BorderBrush="{StaticResource BorderBrush}"
                         BorderThickness="1" CornerRadius="4">
-                    <Grid>
-                        <Viewport3D x:Name="Viewport3D" ClipToBounds="True">
-                            <Viewport3D.Camera>
-                                <PerspectiveCamera x:Name="Camera3D"
-                                    Position="5,5,12" LookDirection="-0.3,-0.3,-1"
-                                    UpDirection="0,1,0" FieldOfView="60"/>
-                            </Viewport3D.Camera>
-                            <ModelVisual3D>
-                                <ModelVisual3D.Content>
-                                    <Model3DGroup>
-                                        <AmbientLight Color="#404040"/>
-                                        <DirectionalLight Color="#C0C0C0" Direction="-1,-1,-1"/>
-                                        <DirectionalLight Color="#606060" Direction="1,0.5,0.5"/>
-                                    </Model3DGroup>
-                                </ModelVisual3D.Content>
-                            </ModelVisual3D>
-                            <ModelVisual3D x:Name="DataModel3D"/>
-                            <ModelVisual3D x:Name="HighlightModel3D"/>
-                        </Viewport3D>
-                        <TextBlock x:Name="Txt3DInfo" FontSize="12" FontFamily="Consolas"
-                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                   HorizontalAlignment="Left" VerticalAlignment="Bottom"
-                                   TextWrapping="Wrap" MaxWidth="400"
-                                   Margin="8,0,0,6"/>
-                    </Grid>
+                    <DockPanel LastChildFill="True">
+                        <!-- 3D Controls toolbar — wraps to multiple lines -->
+                        <Border DockPanel.Dock="Top" Background="{StaticResource SurfaceBrush}"
+                                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1"
+                                Padding="6,4">
+                            <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <!-- Layout mode -->
+                                <StackPanel Orientation="Horizontal" Margin="0,2,10,2">
+                                    <TextBlock Text="Layout:" FontSize="10" VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
+                                    <ComboBox x:Name="Cbo3DLayout" Width="95" FontSize="10"
+                                              SelectedIndex="0" SelectionChanged="Cbo3DLayout_Changed"
+                                              ToolTip="3D layout mode — how blocks are arranged in space">
+                                        <ComboBoxItem Content="Auto Cube"/>
+                                        <ComboBoxItem Content="Wrap Grid"/>
+                                        <ComboBoxItem Content="Flat Grid"/>
+                                        <ComboBoxItem Content="HCP Spheres"/>
+                                        <ComboBoxItem Content="Voxel Vol"/>
+                                    </ComboBox>
+                                </StackPanel>
+                                <!-- Shape -->
+                                <StackPanel Orientation="Horizontal" Margin="0,2,10,2">
+                                    <TextBlock Text="Shape:" FontSize="10" VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
+                                    <ComboBox x:Name="Cbo3DShape" Width="72" FontSize="10"
+                                              SelectedIndex="0" SelectionChanged="Cbo3DShape_Changed">
+                                        <ComboBoxItem Content="Cubes"/>
+                                        <ComboBoxItem Content="Bars"/>
+                                        <ComboBoxItem Content="Spheres"/>
+                                    </ComboBox>
+                                </StackPanel>
+                                <!-- Spread -->
+                                <StackPanel Orientation="Horizontal" Margin="0,2,10,2">
+                                    <TextBlock Text="Spread:" FontSize="10" VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,4,0"/>
+                                    <Slider x:Name="SliderSpacing" Width="70" Minimum="1.1" Maximum="4.0"
+                                            Value="1.1" VerticalAlignment="Center"
+                                            SmallChange="0.1" LargeChange="0.5"
+                                            TickFrequency="0.1" IsSnapToTickEnabled="False"
+                                            ValueChanged="SliderSpacing_Changed"
+                                            ToolTip="Spread blocks apart in 3D view"/>
+                                    <TextBlock x:Name="TxtSpacingValue" Text="1.1" FontSize="10" Width="22"
+                                               VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}"
+                                               Margin="3,0,0,0"/>
+                                </StackPanel>
+                                <!-- Wrap W/H (shown for Wrap Grid, Flat Grid, HCP) -->
+                                <StackPanel x:Name="Panel3DWrap" Orientation="Horizontal" Visibility="Collapsed" Margin="0,2,10,2">
+                                    <TextBlock Text="W:" FontSize="10" VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,3,0"/>
+                                    <Slider x:Name="Slider3DWrapW" Width="65" Minimum="1" Maximum="256"
+                                            Value="16" IsSnapToTickEnabled="False"
+                                            VerticalAlignment="Center"
+                                            ValueChanged="Slider3DWrapW_Changed"
+                                            ToolTip="3D wrap width (columns)"/>
+                                    <TextBlock x:Name="Txt3DWrapW" Text="16" FontSize="10" Width="24"
+                                               Foreground="{StaticResource AccentBrush}"
+                                               VerticalAlignment="Center" Margin="3,0,8,0"/>
+                                    <TextBlock Text="H:" FontSize="10" VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,3,0"/>
+                                    <Slider x:Name="Slider3DWrapH" Width="65" Minimum="1" Maximum="256"
+                                            Value="16" IsSnapToTickEnabled="False"
+                                            VerticalAlignment="Center"
+                                            ValueChanged="Slider3DWrapH_Changed"
+                                            ToolTip="3D wrap height (rows)"/>
+                                    <TextBlock x:Name="Txt3DWrapH" Text="16" FontSize="10" Width="24"
+                                               Foreground="{StaticResource AccentBrush}"
+                                               VerticalAlignment="Center" Margin="3,0,0,0"/>
+                                </StackPanel>
+                                <!-- Voxel dimension (shown for Voxel Vol) -->
+                                <StackPanel x:Name="Panel3DVoxel" Orientation="Horizontal" Visibility="Collapsed" Margin="0,2,10,2">
+                                    <TextBlock Text="Dim:" FontSize="10" VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,3,0"/>
+                                    <Slider x:Name="Slider3DVoxelDim" Width="75" Minimum="16" Maximum="256"
+                                            Value="64" IsSnapToTickEnabled="False"
+                                            VerticalAlignment="Center"
+                                            ValueChanged="Slider3DVoxelDim_Changed"
+                                            ToolTip="Voxel cube dimension (D×D×D)"/>
+                                    <TextBlock x:Name="Txt3DVoxelDim" Text="64" FontSize="10" Width="28"
+                                               Foreground="{StaticResource AccentBrush}"
+                                               VerticalAlignment="Center" Margin="3,0,0,0"/>
+                                </StackPanel>
+                            </WrapPanel>
+                        </Border>
+                        <!-- 3D Viewport fills remaining space -->
+                        <Grid>
+                            <Viewport3D x:Name="Viewport3D" ClipToBounds="True">
+                                <Viewport3D.Camera>
+                                    <PerspectiveCamera x:Name="Camera3D"
+                                        Position="5,5,12" LookDirection="-0.3,-0.3,-1"
+                                        UpDirection="0,1,0" FieldOfView="60"/>
+                                </Viewport3D.Camera>
+                                <ModelVisual3D>
+                                    <ModelVisual3D.Content>
+                                        <Model3DGroup>
+                                            <AmbientLight Color="#404040"/>
+                                            <DirectionalLight Color="#C0C0C0" Direction="-1,-1,-1"/>
+                                            <DirectionalLight Color="#606060" Direction="1,0.5,0.5"/>
+                                        </Model3DGroup>
+                                    </ModelVisual3D.Content>
+                                </ModelVisual3D>
+                                <ModelVisual3D x:Name="DataModel3D"/>
+                                <ModelVisual3D x:Name="HighlightModel3D"/>
+                            </Viewport3D>
+                            <TextBlock x:Name="Txt3DInfo" FontSize="12" FontFamily="Consolas"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                                       TextWrapping="Wrap" MaxWidth="400"
+                                       Margin="8,0,0,6"/>
+                        </Grid>
+                    </DockPanel>
                 </Border>
 
                 <!-- Column Splitter: 3D ↔ Dot plot -->
-                <GridSplitter Grid.Column="3" Width="5" HorizontalAlignment="Stretch"
+                <GridSplitter Grid.Row="1" Grid.Column="3" Width="5" HorizontalAlignment="Stretch"
                               Background="{StaticResource BorderBrush}"/>
 
                 <!-- ════ RIGHT COLUMN: 2D Visualizations ════ -->
-                <Grid Grid.Column="4" Background="{StaticResource BackgroundBrush}">
+                <Grid Grid.Row="1" Grid.Column="4" Background="{StaticResource BackgroundBrush}">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
@@ -558,6 +632,7 @@
                             <ComboBoxItem Content="Parallel Coordinates"/>
                             <ComboBoxItem Content="RadViz"/>
                             <ComboBoxItem Content="Autocorrelation"/>
+                            <ComboBoxItem Content="Byte Presence"/>
                         </ComboBox>
                         <TextBlock x:Name="TxtPlotHint"
                                    Text="scroll=zoom  drag=pan  mid-click=fit  Esc=clear"
@@ -793,6 +868,27 @@
                                                Margin="3,3,3,1"
                                                RenderOptions.BitmapScalingMode="HighQuality"/>
                                         <TextBlock Text="Autocorrelation" FontSize="9"
+                                                   TextAlignment="Center" Margin="0,0,0,4"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Tile 7 — Byte Presence -->
+                                <Border x:Name="TileBorder7" Tag="7" Margin="2" Cursor="Hand"
+                                        Background="{StaticResource SurfaceBrush}"
+                                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                                        CornerRadius="4" MouseLeftButtonDown="Tile_Click">
+                                    <Border.Style><Style TargetType="Border">
+                                        <Style.Triggers><Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                            <Setter Property="Background" Value="#252535"/>
+                                        </Trigger></Style.Triggers>
+                                    </Style></Border.Style>
+                                    <StackPanel>
+                                        <Image x:Name="TileImg7" Height="110" Stretch="Uniform"
+                                               Margin="3,3,3,1"
+                                               RenderOptions.BitmapScalingMode="HighQuality"/>
+                                        <TextBlock Text="Byte Presence" FontSize="9"
                                                    TextAlignment="Center" Margin="0,0,0,4"
                                                    Foreground="{StaticResource TextSecondaryBrush}"/>
                                     </StackPanel>
